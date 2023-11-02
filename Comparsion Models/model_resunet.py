@@ -21,12 +21,14 @@ class residual_block(nn.Module):
 
         """ Convolutional layer """
         self.b1 = batchnorm_relu(in_c)
-        self.c1 = nn.Conv2d(in_c, out_c, kernel_size=3, padding=1, stride=stride)
+        self.c1 = nn.Conv2d(in_c, out_c, kernel_size=3,
+                            padding=1, stride=stride)
         self.b2 = batchnorm_relu(out_c)
         self.c2 = nn.Conv2d(out_c, out_c, kernel_size=3, padding=1, stride=1)
 
         """ Shortcut Connection (Identity Mapping) """
-        self.s = nn.Conv2d(in_c, out_c, kernel_size=1, padding=0, stride=stride)
+        self.s = nn.Conv2d(in_c, out_c, kernel_size=1,
+                           padding=0, stride=stride)
 
     def forward(self, inputs):
         x = self.b1(inputs)
@@ -43,7 +45,8 @@ class decoder_block(nn.Module):
     def __init__(self, in_c, out_c):
         super().__init__()
 
-        self.upsample = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
+        self.upsample = nn.Upsample(
+            scale_factor=2, mode="bilinear", align_corners=True)
         self.r = residual_block(in_c + out_c, out_c)
 
     def forward(self, inputs, skip):

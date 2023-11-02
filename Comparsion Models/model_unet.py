@@ -7,13 +7,18 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
+
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(DoubleConv, self).__init__()
-        self.conv = nn.Sequential(  # nn.Sequential 有序容器，神经网络模块将按照在传入构造器的顺序依次被添加到计算图中执行，同时以神经网络模块为元素的有序字典也可以作为传入参数。
+        # nn.Sequential ordered container. Neural network modules will be added to the calculation graph
+        # for execution in the order passed in to the constructor. At the same time, an ordered dictionary
+        # with neural network modules as elements can also be passed in as parameters.
+        self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, 1, 1, bias=False),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),  # inplace 是否进行覆盖运算
+            # inplace whether to perform overwriting operation
+            nn.ReLU(inplace=True),
             nn.Conv2d(out_channels, out_channels, 3, 1, 1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
@@ -92,11 +97,10 @@ def build_sharp_blocks(layer):
 
 
 class UNET(nn.Module):
-    def __init__(
-            self, in_channels, out_channels, features=[64, 128, 256, 512],
-    ):
+    def __init__(self, in_channels, out_channels, features=[64, 128, 256, 512]):
         super(UNET, self).__init__()
-        self.ups = nn.ModuleList()  # 将多个Module加入list，但不存在实质性顺序，参考python的list
+        # Add multiple Modules to the list, but there is no substantive order.
+        self.ups = nn.ModuleList()
         self.downs = nn.ModuleList()
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
@@ -107,11 +111,8 @@ class UNET(nn.Module):
 
         # Up part of UNET
         for feature in reversed(features):
-            self.ups.append(
-                nn.ConvTranspose2d(
-                    feature * 2, feature, kernel_size=2, stride=2,
-                )
-            )
+            self.ups.append(nn.ConvTranspose2d(feature * 2, feature, 
+                                               kernel_size=2, stride=2))
             self.ups.append(DoubleConv(feature * 2, feature))
 
         self.bottleneck = DoubleConv(features[-1], features[-1] * 2)

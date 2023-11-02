@@ -6,23 +6,14 @@ import numpy as np
 import torch
 from torch import nn
 import os
-os.environ['CUDA_VISIBLE_DEVICES']="0"
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+
 
 class ConvBNReLU(nn.Module):
-    def __init__(self,
-                 c_in,
-                 c_out,
-                 kernel_size,
-                 stride=1,
-                 padding=1,
-                 activation=True):
+    def __init__(self, c_in, c_out, kernel_size, stride=1, padding=1, activation=True):
         super(ConvBNReLU, self).__init__()
-        self.conv = nn.Conv2d(c_in,
-                              c_out,
-                              kernel_size=kernel_size,
-                              stride=stride,
-                              padding=padding,
-                              bias=False)
+        self.conv = nn.Conv2d(c_in, c_out, kernel_size=kernel_size,
+                              stride=stride, padding=padding, bias=False)
         self.bn = nn.BatchNorm2d(c_out)
         self.relu = nn.ReLU()
         self.activation = activation
@@ -123,7 +114,7 @@ class MEAttention(nn.Module):
         B, N, C = x.shape
         x = self.query_liner(x)
         x = x.view(B, N, self.num_heads, -1).permute(0, 2, 1,
-                                                     3)  #(1, 32, 225, 32)
+                                                     3)  # (1, 32, 225, 32)
 
         attn = self.linear_0(x)
 
@@ -273,7 +264,8 @@ class GaussianTrans(nn.Module):
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x):
-        x, atten_x_full, atten_y_full, value_full = x  # atten_x_full(b, h, w, w, c)   atten_y_full(b, w, h, h, c) value_full(b, h, w, c)
+        # atten_x_full(b, h, w, w, c)   atten_y_full(b, w, h, h, c) value_full(b, h, w, c)
+        x, atten_x_full, atten_y_full, value_full = x
         new_value_full = torch.zeros_like(value_full)
 
         for r in range(x.shape[1]):  # row
@@ -306,8 +298,8 @@ class CSAttention(nn.Module):
         self.dlightconv = DlightConv(dim, configs)
         self.global_atten = Attention(dim, configs, axial=True)
         self.gaussiantrans = GaussianTrans()
-        #self.conv = nn.Conv2d(dim, dim, 3, padding=1)
-        #self.maxpool = nn.MaxPool2d(2)
+        # self.conv = nn.Conv2d(dim, dim, 3, padding=1)
+        # self.maxpool = nn.MaxPool2d(2)
         self.up = nn.UpsamplingBilinear2d(scale_factor=4)
         self.queeze = nn.Conv2d(2 * dim, dim, 1)
 
@@ -381,7 +373,7 @@ class Stem(nn.Module):
     def __init__(self):
         super(Stem, self).__init__()
         self.model = U_encoder()
-        self.trans_dim = ConvBNReLU(256, 256, 1, 1, 0)  #out_dim, model_dim
+        self.trans_dim = ConvBNReLU(256, 256, 1, 1, 0)  # out_dim, model_dim
         self.position_embedding = nn.Parameter(torch.zeros((1, 784, 256)))
 
     def forward(self, x):
@@ -389,9 +381,9 @@ class Stem(nn.Module):
         x, features = self.model(x)  # (1, 512, 28, 28)
         x = self.trans_dim(x)  # (B, C, H, W) (1, 256, 28, 28)
         x = x.flatten(2)  # (B, H, N)  (1, 256, 28*28)
-        x = x.transpose(-2, -1)  #  (B, N, H)
+        x = x.transpose(-2, -1)  # (B, N, H)
         x = x + self.position_embedding
-        return x, features  #(B, N, H)
+        return x, features  # (B, N, H)
 
 
 class encoder_block(nn.Module):
@@ -484,12 +476,12 @@ class MTUNet(nn.Module):
     def forward(self, x):
         if x.size()[1] == 1:
             x = x.repeat(1, 3, 1, 1)
-        x, features = self.stem(x)  #(B, N, C) (1, 196, 256)
+        x, features = self.stem(x)  # (B, N, C) (1, 196, 256)
         skips = []
         for i in range(len(self.encoder)):
             x, skip = self.encoder[i](x)
             skips.append(skip)
-            B, C, H, W = x.shape  #  (1, 512, 8, 8)
+            B, C, H, W = x.shape  # (1, 512, 8, 8)
             x = x.permute(0, 2, 3, 1).contiguous().view(B, -1, C)  # (B, N, C)
         x = self.bottleneck(x)  # (1, 25, 1024)
         B, N, C = x.shape

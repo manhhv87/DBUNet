@@ -13,11 +13,19 @@ batchNorm_momentum = 0.1
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(DoubleConv, self).__init__()
-        self.conv = nn.Sequential(  # nn.Sequential 有序容器，神经网络模块将按照在传入构造器的顺序依次被添加到计算图中执行，同时以神经网络模块为元素的有序字典也可以作为传入参数。
-            nn.Conv2d(in_channels, out_channels, 3, 1, 2, bias=False, dilation=2),
+
+        # nn.Sequential ordered container. Neural network modules will be added to
+        # the calculation graph for execution in the order passed in to the constructor.
+        # At the same time, an ordered dictionary with neural network modules as elements
+        # can also be passed in as parameters.
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 3,
+                      1, 2, bias=False, dilation=2),
             nn.BatchNorm2d(out_channels, momentum=batchNorm_momentum),
-            nn.ReLU(inplace=True),  # inplace 是否进行覆盖运算
-            nn.Conv2d(out_channels, out_channels, 3, 1, 2, bias=False, dilation=2),
+            # inplace whether to perform overwriting operation
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, 3,
+                      1, 2, bias=False, dilation=2),
             nn.BatchNorm2d(out_channels, momentum=batchNorm_momentum),
             nn.ReLU(inplace=True),
         )
@@ -30,9 +38,11 @@ class SEModule(nn.Module):
     def __init__(self, in_channels, reduction=16):
         super(SEModule, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc1 = nn.Conv2d(in_channels, in_channels // reduction, kernel_size=1, padding=0)
+        self.fc1 = nn.Conv2d(in_channels, in_channels //
+                             reduction, kernel_size=1, padding=0)
         self.relu = nn.ReLU(inplace=True)
-        self.fc2 = nn.Conv2d(in_channels // reduction, in_channels, kernel_size=1, padding=0)
+        self.fc2 = nn.Conv2d(in_channels // reduction,
+                             in_channels, kernel_size=1, padding=0)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, input):
@@ -64,14 +74,18 @@ class residual_block(nn.Module):
 
         """ Convolutional layer """
         self.b1 = batchnorm_relu(in_channels)
-        self.c1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, stride=stride)
+        self.c1 = nn.Conv2d(in_channels, out_channels,
+                            kernel_size=3, padding=1, stride=stride)
         self.b2 = batchnorm_relu(out_channels)
-        self.c2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, stride=1)
+        self.c2 = nn.Conv2d(out_channels, out_channels,
+                            kernel_size=3, padding=1, stride=1)
 
         """ Shortcut Connection (Identity Mapping) """
-        self.s = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0, stride=stride)
+        self.s = nn.Conv2d(in_channels, out_channels,
+                           kernel_size=1, padding=0, stride=stride)
 
-    def forward(self, inputs):  # 这里交换了BatchNormalizationReLu和卷积的位置
+    # The positions of BatchNormalizationReLu and convolution are exchanged here.
+    def forward(self, inputs):
         x = self.b1(inputs)
         x = self.c1(x)
         x = self.b2(x)
@@ -83,47 +97,60 @@ class residual_block(nn.Module):
 
 
 class Res2NetBottleneck(nn.Module):
-    expansion = 1  # 残差块的输出通道数=输入通道数*exp+ansion
+    # The number of output channels of the residual block = the number of input channels*exp + ansion
+    expansion = 1
 
     def __init__(self, in_channels, out_channels, downsample=None, stride=1, scales=4, groups=1, se=False, norm_layer=True):
-        # scales为残差块中使用分层的特征组数，groups表示其中3*3卷积层数量，SE模块和BN层
+        # scales is the number of hierarchical feature groups used in the residual block,
+        # and groups represents the number of 3*3 convolutional layers, SE modules and BN layers
         super(Res2NetBottleneck, self).__init__()
 
-        if out_channels % scales != 0:  # 输出通道数为4的倍数
+        # The number of output channels is a multiple of 4
+        if out_channels % scales != 0:
             raise ValueError('Planes must be divisible by scales')
-        if norm_layer:  # BN层
+        if norm_layer:  # BN layer
             norm_layer = nn.BatchNorm2d
 
         bottleneck_out_channels = groups * out_channels
         self.scales = scales
         self.stride = stride
         self.downsample = downsample
-        # 1*1的卷积层,在第二个layer时缩小图片尺寸
-        self.iden = nn.Conv2d(in_channels, bottleneck_out_channels, kernel_size=1, stride=stride)
-        self.conv1 = nn.Conv2d(in_channels, bottleneck_out_channels, kernel_size=1, stride=stride)
+
+        # 1*1 convolution layer, reduce the image size in the second layer
+        self.iden = nn.Conv2d(
+            in_channels, bottleneck_out_channels, kernel_size=1, stride=stride)
+        self.conv1 = nn.Conv2d(
+            in_channels, bottleneck_out_channels, kernel_size=1, stride=stride)
         self.bn1 = norm_layer(bottleneck_out_channels)
-        # 3*3的卷积层，一共有3个卷积层和3个BN层
-        self.conv2 = nn.ModuleList([nn.Conv2d(bottleneck_out_channels // scales, bottleneck_out_channels // scales,
-                                              kernel_size=3, stride=1, padding=1, groups=groups) for _ in
-                                    range(scales - 1)])
-        self.bn2 = nn.ModuleList([norm_layer(bottleneck_out_channels // scales) for _ in range(scales - 1)])
-        # 1*1的卷积层，经过这个卷积层之后输出的通道数变成
-        self.conv3 = nn.Conv2d(bottleneck_out_channels, out_channels * self.expansion, kernel_size=1, stride=1)
+
+        # 3*3 convolutional layer, a total of 3 convolutional layers and 3 BN layers
+        self.conv2 = nn.ModuleList([nn.Conv2d(bottleneck_out_channels // scales,
+                                              bottleneck_out_channels // scales,
+                                              kernel_size=3, stride=1, padding=1,
+                                              groups=groups) for _ in range(scales - 1)])
+        self.bn2 = nn.ModuleList(
+            [norm_layer(bottleneck_out_channels // scales) for _ in range(scales - 1)])
+
+        # 1*1 convolution layer, the number of output channels after passing through this convolution layer becomes
+        self.conv3 = nn.Conv2d(bottleneck_out_channels,
+                               out_channels * self.expansion,
+                               kernel_size=1, stride=1)
         self.bn3 = norm_layer(out_channels * self.expansion)
         self.relu = nn.ReLU(inplace=True)
-        # SE模块
+
+        # SE module
         self.se = SEModule(out_channels * self.expansion) if se else None
 
     def forward(self, x):
         identity = self.iden(x)
 
-        # 1*1的卷积层
+        # 1*1 convolutional layer
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
 
-        # scales个(3x3)的残差分层架构
-        xs = torch.chunk(out, self.scales, 1)  # 将x分割成scales块
+        # Residual hierarchical architecture of scales (3x3)
+        xs = torch.chunk(out, self.scales, 1)  # Split x into blocks of scales
         ys = []
         for s in range(self.scales):
             if s == 0:
@@ -131,17 +158,19 @@ class Res2NetBottleneck(nn.Module):
             elif s == 1:
                 ys.append(self.relu(self.bn2[s - 1](self.conv2[s - 1](xs[s]))))
             else:
-                ys.append(self.relu(self.bn2[s - 1](self.conv2[s - 1](xs[s] + ys[-1]))))
+                ys.append(
+                    self.relu(self.bn2[s - 1](self.conv2[s - 1](xs[s] + ys[-1]))))
         out = torch.cat(ys, 1)
 
-        # 1*1的卷积层
+        # 1*1 convolutional layer
         out = self.conv3(out)
         out = self.bn3(out)
 
-        # 加入SE模块
+        # Add SE module
         if self.se is not None:
             out = self.se(out)
-        # 下采样
+
+        # Downsampling
         # if self.downsample:
         #     identity = self.downsample(identity)
 
@@ -155,11 +184,11 @@ class UpSampling(nn.Module):
 
     def __init__(self, C):
         super(UpSampling, self).__init__()
-        # 特征图大小扩大2倍，通道数减半
+        # The size of the feature map is expanded by 2 times and the number of channels is halved.
         # self.Up = nn.Conv2d(C, C // 2, 1, 1)
 
     def forward(self, x):
-        # 使用邻近插值进行下采样
+        # Downsampling using neighbor interpolation
         up = F.interpolate(x, scale_factor=2, mode="nearest")
         up = nn.Conv2d(up.shape[1], up.shape[1] // 2, 1, 1)
 
@@ -176,16 +205,16 @@ class conv1(nn.Module):
 
         return self.conv(x)
 
+
 class oaunet(nn.Module):
-    def __init__(
-            self, in_channels, out_channels, features=[64, 128, 256, 512],
-    ):
+    def __init__(self, in_channels, out_channels, features=[64, 128, 256, 512]):
         super(oaunet, self).__init__()
-        self.ups = nn.ModuleList()  # 将多个Module加入list，但不存在实质性顺序，参考python的list
+        # Add multiple Modules to the list, but there is no substantive order.
+        self.ups = nn.ModuleList()
         self.downs = nn.ModuleList()
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.upsample = nn.Upsample(scale_factor=2, mode="bicubic", align_corners=True)
-
+        self.upsample = nn.Upsample(
+            scale_factor=2, mode="bicubic", align_corners=True)
 
         # Down part of UNET
         for feature in features:
@@ -196,7 +225,6 @@ class oaunet(nn.Module):
             else:
                 self.downs.append(Res2NetBottleneck(in_channels, feature))
                 in_channels = feature
-
 
         # Up part of UNET
         for feature in reversed(features):
@@ -235,15 +263,18 @@ class oaunet(nn.Module):
                           [-1, 9, -1],
                           [-1, -1, -1]]  # outline
 
-                kernel = torch.FloatTensor(kernel).expand(len(skip_connection[0]), len(skip_connection[0]), 3, 3)
+                kernel = torch.FloatTensor(kernel).expand(
+                    len(skip_connection[0]), len(skip_connection[0]), 3, 3)
                 # kernel = torch.FloatTensor(kernel).expand(len(skip_connection[1]), len(skip_connection[1]), 3, 3)
-                weight = torch.nn.Parameter(data=kernel, requires_grad=False).to(device=DEVICE)
-                skip_connection = torch.nn.functional.conv2d(skip_connection, weight, padding=1)
-                nn.BatchNorm2d(skip_connection.shape[1], momentum=batchNorm_momentum)
+                weight = torch.nn.Parameter(
+                    data=kernel, requires_grad=False).to(device=DEVICE)
+                skip_connection = torch.nn.functional.conv2d(
+                    skip_connection, weight, padding=1)
+                nn.BatchNorm2d(
+                    skip_connection.shape[1], momentum=batchNorm_momentum)
                 nn.ReLU(inplace=True)
 
             concat_skip = torch.cat((skip_connection, x), dim=1)
             x = self.ups[idx+2](concat_skip)
 
         return self.final_conv(x)
-

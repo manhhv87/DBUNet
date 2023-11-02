@@ -75,30 +75,35 @@ class SegNet(nn.Module):
         # Stage 1
         x11 = F.relu(self.bn11(self.conv11(x)))
         x12 = F.relu(self.bn12(self.conv12(x11)))
-        x1p, id1 = F.max_pool2d(x12, kernel_size=2, stride=2, return_indices=True)
+        x1p, id1 = F.max_pool2d(
+            x12, kernel_size=2, stride=2, return_indices=True)
 
         # Stage 2
         x21 = F.relu(self.bn21(self.conv21(x1p)))
         x22 = F.relu(self.bn22(self.conv22(x21)))
-        x2p, id2 = F.max_pool2d(x22, kernel_size=2, stride=2, return_indices=True)
+        x2p, id2 = F.max_pool2d(
+            x22, kernel_size=2, stride=2, return_indices=True)
 
         # Stage 3
         x31 = F.relu(self.bn31(self.conv31(x2p)))
         x32 = F.relu(self.bn32(self.conv32(x31)))
         x33 = F.relu(self.bn33(self.conv33(x32)))
-        x3p, id3 = F.max_pool2d(x33, kernel_size=2, stride=2, return_indices=True)
+        x3p, id3 = F.max_pool2d(
+            x33, kernel_size=2, stride=2, return_indices=True)
 
         # Stage 4
         x41 = F.relu(self.bn41(self.conv41(x3p)))
         x42 = F.relu(self.bn42(self.conv42(x41)))
         x43 = F.relu(self.bn43(self.conv43(x42)))
-        x4p, id4 = F.max_pool2d(x43, kernel_size=2, stride=2, return_indices=True)
+        x4p, id4 = F.max_pool2d(
+            x43, kernel_size=2, stride=2, return_indices=True)
 
         # Stage 5
         x51 = F.relu(self.bn51(self.conv51(x4p)))
         x52 = F.relu(self.bn52(self.conv52(x51)))
         x53 = F.relu(self.bn53(self.conv53(x52)))
-        x5p, id5 = F.max_pool2d(x53, kernel_size=2, stride=2, return_indices=True)
+        x5p, id5 = F.max_pool2d(
+            x53, kernel_size=2, stride=2, return_indices=True)
 
         # Stage 5d
         x5d = F.max_unpool2d(x5p, id5, kernel_size=2, stride=2)

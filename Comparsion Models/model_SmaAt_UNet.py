@@ -5,13 +5,16 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 
+
 class DepthwiseSeparableConv(nn.Module):
     def __init__(self, in_channels, output_channels, kernel_size, padding=0, kernels_per_layer=1):
         super(DepthwiseSeparableConv, self).__init__()
         # In Tensorflow DepthwiseConv2D has depth_multiplier instead of kernels_per_layer
-        self.depthwise = nn.Conv2d(in_channels, in_channels * kernels_per_layer, kernel_size=kernel_size, padding=padding,
+        self.depthwise = nn.Conv2d(in_channels, in_channels * kernels_per_layer,
+                                   kernel_size=kernel_size, padding=padding,
                                    groups=in_channels)
-        self.pointwise = nn.Conv2d(in_channels * kernels_per_layer, output_channels, kernel_size=1)
+        self.pointwise = nn.Conv2d(in_channels * kernels_per_layer,
+                                   output_channels, kernel_size=1)
 
     def forward(self, x):
         x = self.depthwise(x)
@@ -27,10 +30,12 @@ class DoubleConvDS(nn.Module):
         if not mid_channels:
             mid_channels = out_channels
         self.double_conv = nn.Sequential(
-            DepthwiseSeparableConv(in_channels, mid_channels, kernel_size=3, kernels_per_layer=kernels_per_layer, padding=1),
+            DepthwiseSeparableConv(in_channels, mid_channels, kernel_size=3,
+                                   kernels_per_layer=kernels_per_layer, padding=1),
             nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
-            DepthwiseSeparableConv(mid_channels, out_channels, kernel_size=3, kernels_per_layer=kernels_per_layer, padding=1),
+            DepthwiseSeparableConv(mid_channels, out_channels, kernel_size=3,
+                                   kernels_per_layer=kernels_per_layer, padding=1),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
         )
@@ -46,7 +51,8 @@ class DownDS(nn.Module):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
             nn.MaxPool2d(2),
-            DoubleConvDS(in_channels, out_channels, kernels_per_layer=kernels_per_layer)
+            DoubleConvDS(in_channels, out_channels,
+                         kernels_per_layer=kernels_per_layer)
         )
 
     def forward(self, x):
@@ -61,11 +67,15 @@ class UpDS(nn.Module):
 
         # if bilinear, use the normal convolutions to reduce the number of channels
         if bilinear:
-            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-            self.conv = DoubleConvDS(in_channels, out_channels, in_channels // 2, kernels_per_layer=kernels_per_layer)
+            self.up = nn.Upsample(
+                scale_factor=2, mode='bilinear', align_corners=True)
+            self.conv = DoubleConvDS(
+                in_channels, out_channels, in_channels // 2, kernels_per_layer=kernels_per_layer)
         else:
-            self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
-            self.conv = DoubleConvDS(in_channels, out_channels, kernels_per_layer=kernels_per_layer)
+            self.up = nn.ConvTranspose2d(
+                in_channels, in_channels // 2, kernel_size=2, stride=2)
+            self.conv = DoubleConvDS(
+                in_channels, out_channels, kernels_per_layer=kernels_per_layer)
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
@@ -74,12 +84,15 @@ class UpDS(nn.Module):
         diffX = x2.size()[3] - x1.size()[3]
 
         x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
-                        diffY // 2, diffY - diffY // 2])  # 对tensor进行扩充，扩充的方向分别是左、右、上、下。
+                        diffY // 2, diffY - diffY // 2])  # Expand the tensor in the directions of left, right, up, and down.
+
         # if you have padding issues, see
         # https://github.com/HaiyongJiang/U-Net-Pytorch-Unstructured-Buggy/commit/0e854509c2cea854e247a9c615f175f76fbb2e3a
         # https://github.com/xiaopeng-liao/Pytorch-UNet/commit/8ebac70e633bac59fc22bb5195e513d5832fb3bd
+
         x = torch.cat([x2, x1], dim=1)
         return self.conv(x)
+
 
 class OutConv(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -89,9 +102,11 @@ class OutConv(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
+
 class Flatten(nn.Module):
     def forward(self, x):
         return x.view(x.size(0), -1)
+
 
 class ChannelAttention(nn.Module):
     def __init__(self, input_channels, reduction_ratio=16):
@@ -99,6 +114,7 @@ class ChannelAttention(nn.Module):
         self.input_channels = input_channels
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
+        
         #  https://github.com/luuuyi/CBAM.PyTorch/blob/master/model/resnet_cbam.py
         #  uses Convolutions instead of Linear
         self.MLP = nn.Sequential(
@@ -122,7 +138,8 @@ class SpatialAttention(nn.Module):
         super(SpatialAttention, self).__init__()
         assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
         padding = 3 if kernel_size == 7 else 1
-        self.conv = nn.Conv2d(2, 1, kernel_size=kernel_size, padding=padding, bias=False)
+        self.conv = nn.Conv2d(2, 1, kernel_size=kernel_size,
+                              padding=padding, bias=False)
         self.bn = nn.BatchNorm2d(1)
 
     def forward(self, x):
@@ -138,13 +155,15 @@ class SpatialAttention(nn.Module):
 class CBAM(nn.Module):
     def __init__(self, input_channels, reduction_ratio=16, kernel_size=7):
         super(CBAM, self).__init__()
-        self.channel_att = ChannelAttention(input_channels, reduction_ratio=reduction_ratio)
+        self.channel_att = ChannelAttention(
+            input_channels, reduction_ratio=reduction_ratio)
         self.spatial_att = SpatialAttention(kernel_size=kernel_size)
 
     def forward(self, x):
         out = self.channel_att(x)
         out = self.spatial_att(out)
         return out
+
 
 class SmaAt_UNet(nn.Module):
     def __init__(self, n_channels, n_classes, kernels_per_layer=2, bilinear=True, reduction_ratio=16):
@@ -155,7 +174,8 @@ class SmaAt_UNet(nn.Module):
         self.bilinear = bilinear
         reduction_ratio = reduction_ratio
 
-        self.inc = DoubleConvDS(self.n_channels, 64, kernels_per_layer=kernels_per_layer)
+        self.inc = DoubleConvDS(self.n_channels, 64,
+                                kernels_per_layer=kernels_per_layer)
         self.cbam1 = CBAM(64, reduction_ratio=reduction_ratio)
         self.down1 = DownDS(64, 128, kernels_per_layer=kernels_per_layer)
         self.cbam2 = CBAM(128, reduction_ratio=reduction_ratio)
@@ -164,12 +184,17 @@ class SmaAt_UNet(nn.Module):
         self.down3 = DownDS(256, 512, kernels_per_layer=kernels_per_layer)
         self.cbam4 = CBAM(512, reduction_ratio=reduction_ratio)
         factor = 2 if self.bilinear else 1
-        self.down4 = DownDS(512, 1024 // factor, kernels_per_layer=kernels_per_layer)
+        self.down4 = DownDS(512, 1024 // factor,
+                            kernels_per_layer=kernels_per_layer)
         self.cbam5 = CBAM(1024 // factor, reduction_ratio=reduction_ratio)
-        self.up1 = UpDS(1024, 512 // factor, self.bilinear, kernels_per_layer=kernels_per_layer)
-        self.up2 = UpDS(512, 256 // factor, self.bilinear, kernels_per_layer=kernels_per_layer)
-        self.up3 = UpDS(256, 128 // factor, self.bilinear, kernels_per_layer=kernels_per_layer)
-        self.up4 = UpDS(128, 64, self.bilinear, kernels_per_layer=kernels_per_layer)
+        self.up1 = UpDS(1024, 512 // factor, self.bilinear,
+                        kernels_per_layer=kernels_per_layer)
+        self.up2 = UpDS(512, 256 // factor, self.bilinear,
+                        kernels_per_layer=kernels_per_layer)
+        self.up3 = UpDS(256, 128 // factor, self.bilinear,
+                        kernels_per_layer=kernels_per_layer)
+        self.up4 = UpDS(128, 64, self.bilinear,
+                        kernels_per_layer=kernels_per_layer)
 
         self.outc = OutConv(64, self.n_classes)
 

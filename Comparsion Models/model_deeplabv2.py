@@ -1,6 +1,6 @@
 """
-作者：86139
-日期：2022年05月24日
+Author: 86139
+Date: May 24, 2022
 """
 from __future__ import absolute_import, print_function
 
@@ -9,7 +9,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-# 定义ASPP模块，这是DeepLab V2和V1的主要区别，可以看到其他部分和V1的代码一模一样
+# Define the ASPP module. This is the main difference between DeepLab V2 and V1.
+# You can see that other parts are exactly the same as the code of V1.
 class _ASPP(nn.Module):
     """
     Atrous spatial pyramid pooling (ASPP)
@@ -18,10 +19,10 @@ class _ASPP(nn.Module):
     def __init__(self, in_ch, out_ch, rates):
         super(_ASPP, self).__init__()
         for i, rate in enumerate(rates):
-            self.add_module(
-                "c{}".format(i),
-                nn.Conv2d(in_ch, out_ch, 3, 1, padding=rate, dilation=rate, bias=True),
-            )
+            self.add_module("c{}".format(i),
+                            nn.Conv2d(in_ch, out_ch, 3, 1,
+                                      padding=rate, dilation=rate, bias=True),
+                            )
 
         for m in self.children():
             nn.init.normal_(m.weight, mean=0, std=0.01)
@@ -40,14 +41,12 @@ class DeepLabV2(nn.Sequential):
     def __init__(self, n_classes, n_blocks, atrous_rates):
         super(DeepLabV2, self).__init__()
         ch = [64 * 2 ** p for p in range(6)]
-        self.convs = nn.ModuleList([
-        _Stem(ch[0]),
-        _ResLayer( n_blocks[0], ch[0], ch[2], 1, 1 ),
-        _ResLayer( n_blocks[1], ch[2], ch[3], 2, 1 ),
-        _ResLayer( n_blocks[2], ch[3], ch[4], 1, 2 ),
-        _ResLayer( n_blocks[3], ch[4], ch[5], 1, 4 ),
-            _ASPP( ch[5], n_classes, atrous_rates ),]
-    )
+        self.convs = nn.ModuleList([_Stem(ch[0]),
+                                    _ResLayer(n_blocks[0], ch[0], ch[2], 1, 1),
+                                    _ResLayer(n_blocks[1], ch[2], ch[3], 2, 1),
+                                    _ResLayer(n_blocks[2], ch[3], ch[4], 1, 2),
+                                    _ResLayer(n_blocks[3], ch[4], ch[5], 1, 4),
+                                    _ASPP(ch[5], n_classes, atrous_rates)])
 
     def freeze_bn(self):
         for m in self.modules():
@@ -55,20 +54,19 @@ class DeepLabV2(nn.Sequential):
                 m.eval()
 
     def forward(self, x):
-
         h = x.size()[2]
         w = x.size()[3]
-        for lay in self.convs:
-            x = lay( x )
 
-        x = F.interpolate( x, size=(h, w), mode="bilinear" )  # (shape: (batch_size, num_classes, h, w))
+        for lay in self.convs:
+            x = lay(x)
+
+        # (shape: (batch_size, num_classes, h, w))
+        x = F.interpolate(x, size=(h, w), mode="bilinear")
         return x
 
 
 _BATCH_NORM = nn.BatchNorm2d
-
 _BOTTLENECK_EXPANSION = 4
-
 
 
 class _ConvBnReLU(nn.Sequential):
@@ -78,17 +76,13 @@ class _ConvBnReLU(nn.Sequential):
 
     BATCH_NORM = _BATCH_NORM
 
-    def __init__(
-            self, in_ch, out_ch, kernel_size, stride, padding, dilation, relu=True
-    ):
+    def __init__(self, in_ch, out_ch, kernel_size, stride, padding, dilation, relu=True):
         super(_ConvBnReLU, self).__init__()
-        self.add_module(
-            "conv",
-            nn.Conv2d(
-                in_ch, out_ch, kernel_size, stride, padding, dilation, bias=False
-            ),
-        )
-        self.add_module("bn", _BATCH_NORM(out_ch, eps=1e-5, momentum=0.999))
+        self.add_module("conv",
+                        nn.Conv2d(in_ch, out_ch, kernel_size, stride,
+                                  padding, dilation, bias=False))
+        self.add_module("bn",
+                        _BATCH_NORM(out_ch, eps=1e-5, momentum=0.999))
 
         if relu:
             self.add_module("relu", nn.ReLU())
@@ -103,13 +97,13 @@ class _Bottleneck(nn.Module):
         super(_Bottleneck, self).__init__()
         mid_ch = out_ch // _BOTTLENECK_EXPANSION
         self.reduce = _ConvBnReLU(in_ch, mid_ch, 1, stride, 0, 1, True)
-        self.conv3x3 = _ConvBnReLU(mid_ch, mid_ch, 3, 1, dilation, dilation, True)
+        self.conv3x3 = _ConvBnReLU(mid_ch, mid_ch, 3, 1,
+                                   dilation, dilation, True)
         self.increase = _ConvBnReLU(mid_ch, out_ch, 1, 1, 0, 1, False)
-        self.shortcut = (
-            _ConvBnReLU(in_ch, out_ch, 1, stride, 0, 1, False)
-            if downsample
-            else lambda x: x  # identity
-        )
+        self.shortcut = (_ConvBnReLU(in_ch, out_ch, 1, stride, 0, 1, False)
+                         if downsample
+                         else lambda x: x  # identity
+                         )
 
     def forward(self, x):
         h = self.reduce(x)
@@ -134,16 +128,13 @@ class _ResLayer(nn.Sequential):
 
         # Downsampling is only in the first block
         for i in range(n_layers):
-            self.add_module(
-                "block{}".format(i + 1),
-                _Bottleneck(
-                    in_ch=(in_ch if i == 0 else out_ch),
-                    out_ch=out_ch,
-                    stride=(stride if i == 0 else 1),
-                    dilation=dilation * multi_grids[i],
-                    downsample=(True if i == 0 else False),
-                ),
-            )
+            self.add_module("block{}".format(i + 1),
+                            _Bottleneck(in_ch=(in_ch if i == 0 else out_ch),
+                                        out_ch=out_ch,
+                                        stride=(stride if i == 0 else 1),
+                                        dilation=dilation * multi_grids[i],
+                                        downsample=(True if i == 0 else False))
+                            )
 
 
 class _Stem(nn.Sequential):

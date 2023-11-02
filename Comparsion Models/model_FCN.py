@@ -86,7 +86,8 @@ class upsample(nn.Module):
         H: High level feature map, upsample
         """
         H = self.conv1x1(H)
-        H = F.interpolate(H, scale_factor=self.scale_factor, mode='bilinear', align_corners=False)
+        H = F.interpolate(H, scale_factor=self.scale_factor,
+                          mode='bilinear', align_corners=False)
         return H
 
 
