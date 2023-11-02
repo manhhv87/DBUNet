@@ -12,10 +12,7 @@ DEVICE = "cuda:1"
 """2023.1.30"""
 
 
-
-
 # helpers
-
 def pair(t):
     return t if isinstance(t, tuple) else (t, t)
 
@@ -67,7 +64,8 @@ class Attention(nn.Module):
 
     def forward(self, x):
         qkv = self.to_qkv(x).chunk(3, dim=-1)
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h=self.heads), qkv)
+        q, k, v = map(lambda t: rearrange(
+            t, 'b n (h d) -> b h n d', h=self.heads), qkv)
 
         dots = torch.matmul(q, k.transpose(-1, -2)) * self.scale
 
@@ -80,11 +78,11 @@ class Attention(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout=0.):
         super().__init__()
-        
+
         self.fc = nn.Sequential(
-            nn.Linear(64, 12, bias=False),  #针对224的数据集
+            nn.Linear(64, 12, bias=False),  # Data set for 224
             nn.ReLU(inplace=True),
             nn.Linear(12, 64, bias=False),
             nn.Sigmoid()
@@ -97,30 +95,38 @@ class Transformer(nn.Module):
         self.layers = nn.ModuleList([])
         # for _ in range(depth):
         self.layers.append(nn.ModuleList([
-            PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout)),
-            PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout))
-            ]))
+            PreNorm(dim, Attention(dim, heads=heads,
+                    dim_head=dim_head, dropout=dropout)),
+            PreNorm(dim, FeedForward(dim, mlp_dim, dropout=dropout))
+        ]))
+
     def forward(self, x, tokens, x_AfterPatchEmbedding):
-        x_AfterConv = torch.zeros([1, 1, 64, 196])  #新建一个空的tensor，用来存储前64个patches
-        for i in range(64):  #遍历每一行（每个）
-            x_patch_i = x_AfterPatchEmbedding[0][i][:]  #取出这一行的值
+        # Create a new empty tensor to store the first 64 patches
+        x_AfterConv = torch.zeros([1, 1, 64, 196])
+        for i in range(64):  # 遍历每一行（每个）
+            # Get the value of this row
+            x_patch_i = x_AfterPatchEmbedding[0][i][:]
             x_patch_i = x_patch_i.view(1, 1, 1, 196)
             x_patch_i = self.PatchConv_stride1(x_patch_i)
             x_patch_i = self.PatchConv_stride1_bn(x_patch_i)
             x_patch_i = self.PatchConv_stride1_rl(x_patch_i)
-            x_AfterConv[0][0][i][:] = x_patch_i[0][0][0][:]  #赋值给新建的tensor x_AfterConv.shape=[1, 1, 64, 196]
+            # Assign value to the newly created tensor x_AfterConv.shape=[1, 1, 64, 196]
+            x_AfterConv[0][0][i][:] = x_patch_i[0][0][0][:]
         a = x_AfterConv.view(1, 64, 1, 196)
         a = a.to(DEVICE)
-        b1 = nn.AdaptiveAvgPool2d(1)(a).view(1, 64) #avgpool,压缩出[1, 64]大小的tensor
+        b1 = nn.AdaptiveAvgPool2d(1)(a).view(
+            1, 64)  # avgpool, compresses a tensor of size [1, 64]
         b1 = b1.to(DEVICE)
 
-        val, idx = torch.sort(b1)  # 升序排序
-        if torch.max(val) < 0 or torch.min(val) > 0: #如果所有值都 < 0,或者所有值都 > 0,
+        val, idx = torch.sort(b1)  # Sort in ascending order
+        # If all values are < 0, or all values are > 0,
+        if torch.max(val) < 0 or torch.min(val) > 0:
             middle = 32
         else:
             for i in range(64):
                 if val[0][i] > 0:
-                    middle = i  # 找到中间值（负正交界）
+                    # Find the middle value (the intersection of negative and positive)
+                    middle = i
                     break
                 if i == 63:
                     middle = 32
@@ -128,16 +134,21 @@ class Transformer(nn.Module):
         excitation = idx[0][middle:]
         l_s = len(suppress)
         l_e = len(excitation)
-        b1[0][suppress] = b1[0][suppress] - 1 / (1 + l_s ** (b1[0][suppress]))  # 反sigmoid，底是长度
-        b1[0][excitation] = b1[0][excitation] + 1 / (1 + l_e ** -(b1[0][excitation]))  # sigmoid，底是长度
+        b1[0][suppress] = b1[0][suppress] - 1 / \
+            (1 + l_s ** (b1[0][suppress])
+             )  # Anti-sigmoid, the base is the length
+        b1[0][excitation] = b1[0][excitation] + 1 / \
+            (1 + l_e ** -(b1[0][excitation])
+             )  # sigmoid, the base is the length
         b = b1
 
-
-        c = self.fc(b).view(1, 64, 1, 1) #前面的(1, 64)是b的size
+        # The previous (1, 64) is the size of b
+        c = self.fc(b).view(1, 64, 1, 1)
         x_attention = a * c.expand_as(a)
-        x_attention = x_attention.view(1, 64, 196)  #[1, 64, 1, 196] -> [1, 64, 196]
+        # [1, 64, 1, 196] -> [1, 64, 196]
+        x_attention = x_attention.view(1, 64, 196)
         token = tokens.view(1, 1, 196)
-        x_attention = torch.cat([x_attention, token], dim=1)  #[1, 65, 196]
+        x_attention = torch.cat([x_attention, token], dim=1)  # [1, 65, 196]
 
         for attn, ff in self.layers:
             x = attn(x) + x + x_attention
@@ -145,32 +156,36 @@ class Transformer(nn.Module):
         return x
 
 
-
 class Bottleneck(nn.Module):
-    # 每个stage维度中扩展的倍数
+    # The multiple of expansion in each stage dimension
     extention = 4
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
 
-        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, stride=stride, groups=4, bias=False)
+        self.conv1 = nn.Conv2d(
+            inplanes, planes, kernel_size=1, stride=stride, groups=4, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
 
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, groups=2, bias=False)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3,
+                               stride=1, padding=1, groups=2, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
 
-        self.conv3 = nn.Conv2d(planes, planes, kernel_size=1, stride=1, groups=4, bias=False)
+        self.conv3 = nn.Conv2d(planes, planes, kernel_size=1,
+                               stride=1, groups=4, bias=False)
         self.bn3 = nn.BatchNorm2d(planes)
 
-        self.conv4 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, groups=2, bias=False)
+        self.conv4 = nn.Conv2d(planes, planes, kernel_size=3,
+                               stride=1, padding=1, groups=2, bias=False)
         self.bn4 = nn.BatchNorm2d(planes)
 
-        self.conv5 = nn.Conv2d(planes, planes , kernel_size=1, stride=1, groups=4, bias=False)
+        self.conv5 = nn.Conv2d(planes, planes, kernel_size=1,
+                               stride=1, groups=4, bias=False)
         self.bn5 = nn.BatchNorm2d(planes)
 
         self.relu = nn.ReLU(inplace=True)
 
-        # 判断残差有没有卷积
+        # Determine whether the residual has convolution
         self.downsample = downsample
         self.stride = stride
 
@@ -218,12 +233,15 @@ class encoder(nn.Module):
 
         assert image_height % patch_height == 0 and image_width % patch_width == 0, 'Image dimensions must be divisible by the patch size.'
 
-        num_patches = (image_height // patch_height) * (image_width // patch_width)
+        num_patches = (image_height // patch_height) * \
+            (image_width // patch_width)
         patch_dim = channels * patch_height * patch_width
-        assert pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
+        assert pool in {
+            'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
 
         self.to_patch_embedding = nn.Sequential(
-            Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1=patch_height, p2=patch_width),
+            Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)',
+                      p1=patch_height, p2=patch_width),
             nn.Linear(patch_dim, dim),
         )
 
@@ -231,7 +249,8 @@ class encoder(nn.Module):
         self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
         self.dropout = nn.Dropout(emb_dropout)
 
-        self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout)
+        self.transformer = Transformer(
+            dim, depth, heads, dim_head, mlp_dim, dropout)
 
         self.pool = pool
         self.to_latent = nn.Identity()
@@ -241,7 +260,8 @@ class encoder(nn.Module):
             nn.Linear(dim, num_classes)
         )
 
-        self.channelTrans = nn.Conv2d(in_channels=65, out_channels=512, kernel_size=1, padding=0)
+        self.channelTrans = nn.Conv2d(
+            in_channels=65, out_channels=512, kernel_size=1, padding=0)
 
     def forward(self, x):
         x_vit = x
@@ -255,10 +275,10 @@ class encoder(nn.Module):
         x_vit = self.dropout(x_vit)
 
         vit_layerInfo = []
-        for i in range(4):  # 设置深度的地方[6, 64+1, dim=196]
-            x_vit = self.transformer(x_vit, cls_tokens[i], x_AfterPatchEmbedding)
+        for i in range(4):  # Where to set the depth [6, 64+1, dim=196]
+            x_vit = self.transformer(
+                x_vit, cls_tokens[i], x_AfterPatchEmbedding)
             vit_layerInfo.append(x_vit)
-
 
         return vit_layerInfo
 
@@ -292,7 +312,8 @@ class DBUNet(nn.Module):
         self.encoder3 = resnet.layer3
         self.encoder4 = resnet.layer4
 
-        self.encoder = encoder(image_size=224, patch_size=28, num_classes=2, dim=196, depth=6, heads=16, mlp_dim=2048)
+        self.encoder = encoder(image_size=224, patch_size=28,
+                               num_classes=2, dim=196, depth=6, heads=16, mlp_dim=2048)
         self.conv = nn.Conv2d(1024, 512, 1)
         self.bottleneck = Bottleneck(512, 1024)
         self.ups = nn.ModuleList()
@@ -305,7 +326,8 @@ class DBUNet(nn.Module):
             self.ups.append(DoubleConv(feature * 2, feature))
         self.finalconv = nn.Conv2d(features[0], out_channels, kernel_size=1)
 
-        self.vitLayer_UpConv = nn.ConvTranspose2d(65, 65, kernel_size=2, stride=2)
+        self.vitLayer_UpConv = nn.ConvTranspose2d(
+            65, 65, kernel_size=2, stride=2)
 
         self.final_conv1 = nn.ConvTranspose2d(64, 32, 1)
         self.final_relu1 = nn.ReLU(inplace=True)
@@ -329,7 +351,7 @@ class DBUNet(nn.Module):
 
         x = self.bottleneck(e4)
 
-        vit_layerInfo = vit_layerInfo[::-1]  # 翻转，呈正序。0表示第四层...3表示第一层
+        vit_layerInfo = vit_layerInfo[::-1]  # Flip to positive order. 0 means the fourth layer...3 means the first layer
 
         v = vit_layerInfo[0].view(4, 65, 14, 14)
         x = torch.cat([x, e4, v], dim=1)
